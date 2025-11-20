@@ -1,4 +1,4 @@
-// Fichier : src/app/checkout/page.jsx
+// Fichier : src/app/checkout/page.jsx (VERSION CORRIGÉE)
 
 "use client";
 
@@ -40,7 +40,6 @@ const PaymentOption = ({ icon: Icon, title, description, method, selected, onCli
     </div>
 );
 
-// Nouveau composant pour la sélection des livreurs
 const DelivererOption = ({ deliverer, selected, onSelect, loading }) => (
     <div 
         onClick={() => !loading && onSelect(deliverer)}
@@ -239,23 +238,44 @@ export default function CheckoutPage() {
         return <div className="min-h-screen flex items-center justify-center p-8 text-xl text-blue-600"><FaSpinner className="animate-spin mr-3" /> Chargement de la commande...</div>;
     }
 
-    // --- Logique de Base de Données ---
+    // --- NOUVELLE VERSION CORRIGÉE DE createOrderInDatabase ---
 
     const createOrderInDatabase = async (paymentMethod) => {
         if (!selectedDeliverer) {
             throw new Error("Veuillez choisir un livreur.");
         }
 
-        // Grouper les items par vendeur
+        // CORRECTION: Récupérer les seller_id manquants depuis la base de données
+        const productIds = cart.map(item => item.id);
+        const { data: productsData, error: productsError } = await supabase
+            .from('products')
+            .select('id, seller_id')
+            .in('id', productIds);
+
+        if (productsError) {
+            throw new Error("Erreur lors de la récupération des informations produit");
+        }
+
+        // Créer un mapping product_id -> seller_id
+        const productSellerMap = {};
+        productsData.forEach(product => {
+            productSellerMap[product.id] = product.seller_id;
+        });
+
+        // Vérifier que tous les produits ont un vendeur
+        const productsWithoutSeller = cart.filter(item => !productSellerMap[item.id]);
+        if (productsWithoutSeller.length > 0) {
+            throw new Error("Certains produits n'ont pas de vendeur associé. Veuillez contacter le support.");
+        }
+
+        // Grouper les items par vendeur avec les seller_id récupérés
         const itemsByVendor = {};
         cart.forEach(item => {
-            if (!item.seller_id) {
-                throw new Error("Erreur: produit sans vendeur. Veuillez contacter le support.");
+            const sellerId = productSellerMap[item.id];
+            if (!itemsByVendor[sellerId]) {
+                itemsByVendor[sellerId] = [];
             }
-            if (!itemsByVendor[item.seller_id]) {
-                itemsByVendor[item.seller_id] = [];
-            }
-            itemsByVendor[item.seller_id].push(item);
+            itemsByVendor[sellerId].push(item);
         });
 
         // Répartition des frais
@@ -277,8 +297,8 @@ export default function CheckoutPage() {
         for (const [sellerId, vendorItems] of Object.entries(itemsByVendor)) {
             // Répartition du shipping fee plateforme
             const vendorShippingFee = totalProducts > 0 ? (vendorTotals[sellerId] / totalProducts) * shippingFeeXOF : 0;
-            // Frais livreur (en XOF) - appliqué en totalité à la première commande ou réparti selon votre logique
-            const vendorDelivererFee = orderIds.length === 0 ? selectedDelivererFee : 0; // Ou répartir différemment
+            // Frais livreur (en XOF) - appliqué en totalité à la première commande
+            const vendorDelivererFee = orderIds.length === 0 ? selectedDelivererFee : 0;
 
             let vendorTotal = vendorTotals[sellerId] + vendorShippingFee + vendorDelivererFee;
 

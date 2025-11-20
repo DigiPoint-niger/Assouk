@@ -1,4 +1,4 @@
-// Fichier : src/context/CartContext.jsx (VERSION CORRIGÉE)
+// Fichier : src/context/CartContext.jsx (VERSION CORRIGÉE AVEC seller_id)
 
 "use client";
 
@@ -16,21 +16,23 @@ export function CartProvider({ children }) {
     setTotal(t);
   }, [cart]);
 
-  // Ajouter un produit au panier
-  // Modifié pour accepter la QUANTITÉ (quantityToUse)
+  // Ajouter un produit au panier - CORRIGÉ POUR INCLURE seller_id
   const addToCart = (product, quantityToUse = 1) => {
     setCart((prev) => {
       const exists = prev.find((p) => p.id === product.id);
       
       if (exists) {
-        // CORRECTION: Ajoute la quantité spécifiée par l'utilisateur
         return prev.map((p) =>
           p.id === product.id ? { ...p, quantity: p.quantity + quantityToUse } : p
         );
       }
       
-      // CORRECTION: Initialise la quantité avec la quantité spécifiée
-      return [...prev, { ...product, quantity: quantityToUse }];
+      // CORRECTION: Inclure le seller_id dans l'item du panier
+      return [...prev, { 
+        ...product, 
+        quantity: quantityToUse,
+        seller_id: product.seller_id // ← ASSURER que seller_id est inclus
+      }];
     });
   };
   
