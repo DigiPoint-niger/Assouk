@@ -1,4 +1,4 @@
-// Fichier : src/app/dashboard/admin/orders/page.jsx
+// Fichier : src/app/dashboard/seller/orders/page.jsx
 
 "use client";
 
@@ -17,7 +17,9 @@ import {
     FaTruck,
     FaTimesCircle,
     FaMoneyBillWave,
-    FaExclamationTriangle
+    FaExclamationTriangle,
+    FaExclamationCircle,
+    FaCrown
 } from 'react-icons/fa';
 
 export default function OrdersManagement() {
@@ -27,6 +29,8 @@ export default function OrdersManagement() {
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [subscriptionPlan, setSubscriptionPlan] = useState(null);
+    const [currentProductsCount, setCurrentProductsCount] = useState(0);
     const { user } = useAuth();
 
     // Statuts des commandes
@@ -46,6 +50,41 @@ export default function OrdersManagement() {
         'paypal': 'PayPal'
     };
 
+    // Charger le plan d'abonnement et les statistiques du vendeur
+    const fetchSellerSubscription = async () => {
+        if (!user) return;
+
+        try {
+            // Récupérer le plan d'abonnement
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select(`
+                    subscription_plan,
+                    subscription_plans (*)
+                `)
+                .eq('id', user.id)
+                .single();
+
+            if (profileError) throw profileError;
+
+            if (profileData.subscription_plan) {
+                setSubscriptionPlan(profileData.subscription_plans);
+            }
+
+            // Compter les produits actifs
+            const { count: productsCount, error: productsError } = await supabase
+                .from('products')
+                .select('*', { count: 'exact', head: true })
+                .eq('seller_id', user.id);
+
+            if (productsError) throw productsError;
+            setCurrentProductsCount(productsCount || 0);
+
+        } catch (error) {
+            console.error('Erreur lors du chargement du plan:', error);
+        }
+    };
+
     // Charger les commandes
     const fetchOrders = async () => {
         setLoading(true);
@@ -59,7 +98,7 @@ export default function OrdersManagement() {
                     deliverer:profiles!deliverer_id(name, phone),
                     payments(*)
                 `)
-                .eq('seller_id',user.id)
+                .eq('seller_id', user.id)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -72,8 +111,68 @@ export default function OrdersManagement() {
     };
 
     useEffect(() => {
+        fetchSellerSubscription();
         fetchOrders();
-    }, []);
+    }, [user]);
+
+    // Vérifier si le vendeur peut accepter plus de commandes
+    const canAcceptMoreOrders = () => {
+        if (!subscriptionPlan) return true; // Plan gratuit par défaut
+        
+        // Vérifier la limite de produits
+        if (currentProductsCount >= subscriptionPlan.max_products) {
+            return false;
+        }
+        
+        return true;
+    };
+
+    // Accepter une commande
+    const acceptOrder = async (orderId) => {
+        if (!canAcceptMoreOrders()) {
+            alert(`Vous avez atteint la limite de ${subscriptionPlan.max_products} produits de votre plan. Veuillez mettre à jour votre abonnement pour accepter plus de commandes.`);
+            return;
+        }
+
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({ 
+                    status: 'confirmed',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', orderId);
+
+            if (error) throw error;
+
+            await fetchOrders();
+            alert('Commande confirmée avec succès!');
+        } catch (error) {
+            console.error('Erreur lors de la confirmation:', error);
+            alert('Erreur lors de la confirmation de la commande.');
+        }
+    };
+
+    // Refuser une commande
+    const rejectOrder = async (orderId) => {
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({ 
+                    status: 'canceled',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', orderId);
+
+            if (error) throw error;
+
+            await fetchOrders();
+            alert('Commande annulée avec succès!');
+        } catch (error) {
+            console.error('Erreur lors de l\'annulation:', error);
+            alert('Erreur lors de l\'annulation de la commande.');
+        }
+    };
 
     // Filtrer les commandes
     const filteredOrders = orders.filter(order => {
@@ -86,7 +185,6 @@ export default function OrdersManagement() {
         
         return matchesSearch && matchesStatus;
     });
-
 
     // Afficher les détails d'une commande
     const viewOrderDetails = (order) => {
@@ -125,7 +223,7 @@ export default function OrdersManagement() {
 
     return (
         <div className="space-y-6">
-            {/* En-tête */}
+            {/* En-tête avec informations du plan */}
             <div className="bg-white rounded-xl shadow-sm p-6">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                     <div>
@@ -133,6 +231,38 @@ export default function OrdersManagement() {
                         <p className="text-gray-600 mt-1">
                             {filteredOrders.length} commande{filteredOrders.length !== 1 ? 's' : ''} trouvée{filteredOrders.length !== 1 ? 's' : ''}
                         </p>
+                        
+                        {/* Informations du plan */}
+                        <div className="mt-3 flex items-center gap-3">
+                            <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                                subscriptionPlan 
+                                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                    : 'bg-gray-100 text-gray-800 border border-gray-200'
+                            }`}>
+                                {subscriptionPlan ? (
+                                    <div className="flex items-center gap-2">
+                                        <FaCrown className="text-yellow-500" />
+                                        <span>Plan {subscriptionPlan.name}</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <FaBoxOpen className="text-gray-500" />
+                                        <span>Plan Gratuit</span>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="text-sm text-gray-600">
+                                Produits: {currentProductsCount} / {subscriptionPlan?.max_products || '∞'}
+                            </div>
+
+                            {!canAcceptMoreOrders() && (
+                                <div className="flex items-center gap-1 text-red-600 text-sm">
+                                    <FaExclamationCircle />
+                                    <span>Limite de produits atteinte</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
                     
                     {/* Barre de recherche et filtres */}
@@ -174,7 +304,7 @@ export default function OrdersManagement() {
                                     Commande
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Vendeur
+                                    Client
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Montant
@@ -197,35 +327,30 @@ export default function OrdersManagement() {
                                         <div className="text-sm font-medium text-gray-900">
                                             #{order.id.slice(-8)}
                                         </div>
+                                        <div className="text-sm text-gray-500">
+                                            {paymentMethods[order.payment_method] || order.payment_method}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-gray-900">{order.seller?.name}</div>
-                                        <div className="text-sm text-gray-500">{order.seller?.phone}</div>
+                                        <div className="text-sm text-gray-900">{order.client?.name}</div>
+                                        <div className="text-sm text-gray-500">{order.delivery_phone}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-semibold text-gray-900">
                                             {formatPrice(order.total)}
                                         </div>
-                                        <div className="text-sm text-gray-500 capitalize">
-                                            {paymentMethods[order.payment_method] || order.payment_method}
+                                        <div className="text-sm text-gray-500">
+                                            Frais: {formatPrice(order.delivery_fee || 0)}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="flex items-center gap-2">
                                             {getStatusIcon(order.status)}
-                                            <select
-                                                disabled
-                                                value={order.status}
-                                                className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[var(--company-blue)] ${
-                                                    orderStatuses.find(s => s.value === order.status)?.color || 'bg-gray-100 text-gray-800'
-                                                }`}
-                                            >
-                                                {orderStatuses.map(status => (
-                                                    <option key={status.value} value={status.value}>
-                                                        {status.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                                                orderStatuses.find(s => s.value === order.status)?.color || 'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {orderStatuses.find(s => s.value === order.status)?.label || order.status}
+                                            </span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -240,6 +365,34 @@ export default function OrdersManagement() {
                                             >
                                                 <FaEye className="text-lg" />
                                             </button>
+                                            
+                                            {order.status === 'pending' && (
+                                                <>
+                                                    <button
+                                                        onClick={() => acceptOrder(order.id)}
+                                                        disabled={!canAcceptMoreOrders()}
+                                                        className={`${
+                                                            canAcceptMoreOrders() 
+                                                                ? 'text-green-600 hover:text-green-800' 
+                                                                : 'text-gray-400 cursor-not-allowed'
+                                                        } transition-colors`}
+                                                        title={
+                                                            canAcceptMoreOrders() 
+                                                                ? "Accepter la commande"
+                                                                : "Limite de produits atteinte"
+                                                        }
+                                                    >
+                                                        <FaCheckCircle className="text-lg" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => rejectOrder(order.id)}
+                                                        className="text-red-600 hover:text-red-800 transition-colors"
+                                                        title="Refuser la commande"
+                                                    >
+                                                        <FaTimesCircle className="text-lg" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -293,10 +446,20 @@ export default function OrdersManagement() {
                                 </div>
                                 
                                 <div>
-                                    <h3 className="font-semibold text-gray-700 mb-3">Informations Vendeur</h3>
+                                    <h3 className="font-semibold text-gray-700 mb-3">Statut de la Commande</h3>
                                     <div className="space-y-2 text-sm">
-                                        <p><strong>Nom:</strong> {selectedOrder.seller?.name}</p>
-                                        <p><strong>Téléphone:</strong> {selectedOrder.seller?.phone}</p>
+                                        <p>
+                                            <strong>Statut:</strong> 
+                                            <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
+                                                orderStatuses.find(s => s.value === selectedOrder.status)?.color || 'bg-gray-100 text-gray-800'
+                                            }`}>
+                                                {orderStatuses.find(s => s.value === selectedOrder.status)?.label || selectedOrder.status}
+                                            </span>
+                                        </p>
+                                        <p><strong>Date de création:</strong> {new Date(selectedOrder.created_at).toLocaleDateString('fr-FR')}</p>
+                                        {selectedOrder.delivery_completed_at && (
+                                            <p><strong>Livrée le:</strong> {new Date(selectedOrder.delivery_completed_at).toLocaleDateString('fr-FR')}</p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -330,6 +493,7 @@ export default function OrdersManagement() {
                                         </span>
                                     </p>
                                     <p><strong>Montant total:</strong> {formatPrice(selectedOrder.total)}</p>
+                                    <p><strong>Frais de livraison:</strong> {formatPrice(selectedOrder.delivery_fee || 0)}</p>
                                 </div>
                             </div>
 

@@ -18,7 +18,8 @@ import {
     FaTimesCircle,
     FaCheckCircle,
     FaUsers,
-    FaStar
+    FaStar,
+    FaTruck
 } from 'react-icons/fa';
 
 export default function PlansManagement() {
@@ -33,7 +34,8 @@ export default function PlansManagement() {
         price: 0,
         max_products: 50,
         max_ads: 5,
-        max_wallet_balance: 100000
+        max_wallet_balance: 100000,
+        max_concurrent_deliveries: 5
     });
     const [userCounts, setUserCounts] = useState({});
 
@@ -104,7 +106,8 @@ export default function PlansManagement() {
                     price: parseFloat(newPlan.price),
                     max_products: parseInt(newPlan.max_products),
                     max_ads: parseInt(newPlan.max_ads),
-                    max_wallet_balance: parseFloat(newPlan.max_wallet_balance)
+                    max_wallet_balance: parseFloat(newPlan.max_wallet_balance),
+                    max_concurrent_deliveries: parseInt(newPlan.max_concurrent_deliveries)
                 }])
                 .select()
                 .single();
@@ -118,7 +121,8 @@ export default function PlansManagement() {
                 price: 0,
                 max_products: 50,
                 max_ads: 5,
-                max_wallet_balance: 100000
+                max_wallet_balance: 100000,
+                max_concurrent_deliveries: 5
             });
         } catch (error) {
             console.error('Erreur lors de la création du plan:', error);
@@ -141,7 +145,8 @@ export default function PlansManagement() {
                     price: parseFloat(editingPlan.price),
                     max_products: parseInt(editingPlan.max_products),
                     max_ads: parseInt(editingPlan.max_ads),
-                    max_wallet_balance: parseFloat(editingPlan.max_wallet_balance)
+                    max_wallet_balance: parseFloat(editingPlan.max_wallet_balance),
+                    max_concurrent_deliveries: parseInt(editingPlan.max_concurrent_deliveries)
                 })
                 .eq('id', editingPlan.id);
 
@@ -207,15 +212,41 @@ export default function PlansManagement() {
             return FaCrown;
         } else if (planName.toLowerCase().includes('enterprise') || planName.toLowerCase().includes('entreprise')) {
             return FaUsers;
+        } else if (planName.toLowerCase().includes('gratuit') || planName.toLowerCase().includes('free')) {
+            return FaMoneyBillWave;
         }
         return FaCrown;
     };
 
     // Obtenir la couleur du plan selon son prix
     const getPlanColor = (price) => {
-        if (price === 0) return 'bg-green-100 text-green-800';
-        if (price < 10000) return 'bg-blue-100 text-blue-800';
-        return 'bg-purple-100 text-purple-800';
+        if (price === 0) return 'bg-green-100 text-green-800 border-green-200';
+        if (price < 10000) return 'bg-blue-100 text-blue-800 border-blue-200';
+        if (price < 20000) return 'bg-purple-100 text-purple-800 border-purple-200';
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+    };
+
+    // Obtenir la description des limites du plan
+    const getPlanLimitsDescription = (plan) => {
+        const limits = [];
+        
+        if (plan.max_products > 0) {
+            limits.push(`${plan.max_products} produits`);
+        }
+        
+        if (plan.max_ads > 0) {
+            limits.push(`${plan.max_ads} publicités`);
+        }
+        
+        if (plan.max_concurrent_deliveries > 0) {
+            limits.push(`${plan.max_concurrent_deliveries} livraisons simultanées`);
+        }
+        
+        if (plan.max_wallet_balance > 0) {
+            limits.push(`Portefeuille: ${formatPrice(plan.max_wallet_balance)}`);
+        }
+        
+        return limits.join(' • ');
     };
 
     if (loading) {
@@ -235,7 +266,7 @@ export default function PlansManagement() {
                     <div>
                         <h1 className="text-2xl font-bold text-gray-800">Gestion des Plans d'Abonnement</h1>
                         <p className="text-gray-600 mt-1">
-                            {filteredPlans.length} plan{filteredPlans.length !== 1 ? 's' : ''} trouvé{filteredPlans.length !== 1 ? 's' : ''}
+                            Gérez les plans pour les vendeurs et livreurs - {filteredPlans.length} plan{filteredPlans.length !== 1 ? 's' : ''} trouvé{filteredPlans.length !== 1 ? 's' : ''}
                         </p>
                     </div>
                     
@@ -271,9 +302,9 @@ export default function PlansManagement() {
                     const userCount = userCounts[plan.id] || 0;
                     
                     return (
-                        <div key={plan.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div key={plan.id} className={`bg-white rounded-xl shadow-sm border-2 overflow-hidden transition-transform hover:scale-105 hover:shadow-lg ${getPlanColor(plan.price)}`}>
                             {/* En-tête de la carte */}
-                            <div className={`p-6 ${getPlanColor(plan.price)}`}>
+                            <div className="p-6">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
                                         <PlanIcon className="text-2xl" />
@@ -287,6 +318,11 @@ export default function PlansManagement() {
                                     </div>
                                 </div>
                                 
+                                {/* Description des limites */}
+                                <div className="text-sm opacity-75 mb-3">
+                                    {getPlanLimitsDescription(plan)}
+                                </div>
+                                
                                 {/* Nombre d'utilisateurs */}
                                 <div className="flex items-center gap-2 text-sm">
                                     <FaUsers className="opacity-75" />
@@ -295,29 +331,39 @@ export default function PlansManagement() {
                             </div>
 
                             {/* Détails du plan */}
-                            <div className="p-6 space-y-4">
-                                <div className="flex items-center justify-between">
+                            <div className="p-6 space-y-4 bg-white">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="flex items-center gap-2 text-gray-600">
-                                        <FaBox />
-                                        <span>Produits max</span>
+                                        <FaBox className="text-blue-500" />
+                                        <div>
+                                            <div className="text-sm">Produits max</div>
+                                            <div className="font-semibold text-gray-800">{plan.max_products}</div>
+                                        </div>
                                     </div>
-                                    <span className="font-semibold">{plan.max_products}</span>
-                                </div>
-                                
-                                <div className="flex items-center justify-between">
+                                    
                                     <div className="flex items-center gap-2 text-gray-600">
-                                        <FaBullhorn />
-                                        <span>Publicités max</span>
+                                        <FaBullhorn className="text-purple-500" />
+                                        <div>
+                                            <div className="text-sm">Publicités max</div>
+                                            <div className="font-semibold text-gray-800">{plan.max_ads}</div>
+                                        </div>
                                     </div>
-                                    <span className="font-semibold">{plan.max_ads}</span>
-                                </div>
-                                
-                                <div className="flex items-center justify-between">
+                                    
                                     <div className="flex items-center gap-2 text-gray-600">
-                                        <FaWallet />
-                                        <span>Solde portefeuille</span>
+                                        <FaTruck className="text-orange-500" />
+                                        <div>
+                                            <div className="text-sm">Livraisons simult.</div>
+                                            <div className="font-semibold text-gray-800">{plan.max_concurrent_deliveries || 5}</div>
+                                        </div>
                                     </div>
-                                    <span className="font-semibold">{formatPrice(plan.max_wallet_balance)}</span>
+                                    
+                                    <div className="flex items-center gap-2 text-gray-600">
+                                        <FaWallet className="text-green-500" />
+                                        <div>
+                                            <div className="text-sm">Solde max</div>
+                                            <div className="font-semibold text-gray-800">{formatPrice(plan.max_wallet_balance)}</div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Actions */}
@@ -333,6 +379,7 @@ export default function PlansManagement() {
                                         onClick={() => deletePlan(plan.id, plan.name)}
                                         className="flex-1 flex items-center justify-center gap-2 bg-red-100 text-red-700 py-2 px-3 rounded-lg hover:bg-red-200 transition-colors"
                                         disabled={userCount > 0}
+                                        title={userCount > 0 ? `Ce plan est utilisé par ${userCount} utilisateur(s)` : 'Supprimer le plan'}
                                     >
                                         <FaTrash className={userCount > 0 ? 'opacity-50' : ''} />
                                         Supprimer
@@ -414,44 +461,64 @@ export default function PlansManagement() {
                                 </p>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre maximum de produits
-                                </label>
-                                <input
-                                    type="number"
-                                    value={newPlan.max_products}
-                                    onChange={(e) => setNewPlan({...newPlan, max_products: e.target.value})}
-                                    min="1"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Produits max
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={newPlan.max_products}
+                                        onChange={(e) => setNewPlan({...newPlan, max_products: e.target.value})}
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Publicités max
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={newPlan.max_ads}
+                                        onChange={(e) => setNewPlan({...newPlan, max_ads: e.target.value})}
+                                        min="0"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre maximum de publicités
-                                </label>
-                                <input
-                                    type="number"
-                                    value={newPlan.max_ads}
-                                    onChange={(e) => setNewPlan({...newPlan, max_ads: e.target.value})}
-                                    min="0"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
-                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Livraisons simultanées
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={newPlan.max_concurrent_deliveries}
+                                        onChange={(e) => setNewPlan({...newPlan, max_concurrent_deliveries: e.target.value})}
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Pour les livreurs
+                                    </p>
+                                </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Solde maximum du portefeuille (FCFA)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={newPlan.max_wallet_balance}
-                                    onChange={(e) => setNewPlan({...newPlan, max_wallet_balance: e.target.value})}
-                                    min="0"
-                                    step="1000"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Solde max (FCFA)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={newPlan.max_wallet_balance}
+                                        onChange={(e) => setNewPlan({...newPlan, max_wallet_balance: e.target.value})}
+                                        min="0"
+                                        step="1000"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
                             </div>
                         </div>
 
@@ -520,44 +587,64 @@ export default function PlansManagement() {
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre maximum de produits
-                                </label>
-                                <input
-                                    type="number"
-                                    value={editingPlan.max_products}
-                                    onChange={(e) => setEditingPlan({...editingPlan, max_products: e.target.value})}
-                                    min="1"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Produits max
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editingPlan.max_products}
+                                        onChange={(e) => setEditingPlan({...editingPlan, max_products: e.target.value})}
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Publicités max
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editingPlan.max_ads}
+                                        onChange={(e) => setEditingPlan({...editingPlan, max_ads: e.target.value})}
+                                        min="0"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre maximum de publicités
-                                </label>
-                                <input
-                                    type="number"
-                                    value={editingPlan.max_ads}
-                                    onChange={(e) => setEditingPlan({...editingPlan, max_ads: e.target.value})}
-                                    min="0"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
-                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Livraisons simultanées
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editingPlan.max_concurrent_deliveries || 5}
+                                        onChange={(e) => setEditingPlan({...editingPlan, max_concurrent_deliveries: e.target.value})}
+                                        min="1"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Pour les livreurs
+                                    </p>
+                                </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Solde maximum du portefeuille (FCFA)
-                                </label>
-                                <input
-                                    type="number"
-                                    value={editingPlan.max_wallet_balance}
-                                    onChange={(e) => setEditingPlan({...editingPlan, max_wallet_balance: e.target.value})}
-                                    min="0"
-                                    step="1000"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
-                                />
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Solde max (FCFA)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editingPlan.max_wallet_balance}
+                                        onChange={(e) => setEditingPlan({...editingPlan, max_wallet_balance: e.target.value})}
+                                        min="0"
+                                        step="1000"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)]"
+                                    />
+                                </div>
                             </div>
                         </div>
 

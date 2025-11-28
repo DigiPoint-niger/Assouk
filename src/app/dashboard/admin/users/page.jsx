@@ -20,20 +20,21 @@ import {
     FaCrown,
     FaBan,
     FaCheck,
-    FaExclamationTriangle
+    FaExclamationTriangle,
+    FaCreditCard
 } from 'react-icons/fa';
 
 export default function UsersManagement() {
     const [users, setUsers] = useState([]);
+    const [subscriptionPlans, setSubscriptionPlans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
     const [badgeFilter, setBadgeFilter] = useState('all');
     const [selectedUser, setSelectedUser] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState(null);
-    const [userStats, setUserStats] = useState({});
+    const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+    const [assigningPlan, setAssigningPlan] = useState(false);
 
     // Rôles des utilisateurs
     const userRoles = [
@@ -50,16 +51,29 @@ export default function UsersManagement() {
         { value: 'verified', label: 'Vérifié', color: 'bg-green-100 text-green-800' }
     ];
 
-    // Charger les utilisateurs avec leurs statistiques
+    // Charger les utilisateurs et les plans d'abonnement
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const { data: usersData, error } = await supabase
-                .from('profiles')
+            // Charger les plans d'abonnement
+            const { data: plansData, error: plansError } = await supabase
+                .from('subscription_plans')
                 .select('*')
+                .order('price', { ascending: true });
+
+            if (plansError) throw plansError;
+            setSubscriptionPlans(plansData || []);
+
+            // Charger les utilisateurs avec leurs plans
+            const { data: usersData, error: usersError } = await supabase
+                .from('profiles')
+                .select(`
+                    *,
+                    subscription_plans (*)
+                `)
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (usersError) throw usersError;
 
             // Récupérer les statistiques pour chaque utilisateur
             const usersWithStats = await Promise.all(
@@ -167,11 +181,65 @@ export default function UsersManagement() {
         }
     };
 
+    // Assigner un plan d'abonnement
+    const assignSubscriptionPlan = async (userId, planId) => {
+        setAssigningPlan(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ subscription_plan: planId || null })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            // Mettre à jour l'utilisateur avec les détails du plan
+            const updatedPlan = subscriptionPlans.find(plan => plan.id === planId) || null;
+            
+            setUsers(users.map(user => 
+                user.id === userId ? { 
+                    ...user, 
+                    subscription_plan: planId,
+                    subscription_plans: updatedPlan
+                } : user
+            ));
+
+            // Fermer le modal si ouvert
+            if (isSubscriptionModalOpen) {
+                setIsSubscriptionModalOpen(false);
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'assignation du plan:', error);
+            alert('Erreur lors de l\'assignation du plan d\'abonnement');
+        } finally {
+            setAssigningPlan(false);
+        }
+    };
+
+    // Retirer un plan d'abonnement
+    const removeSubscriptionPlan = async (userId) => {
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ subscription_plan: null })
+                .eq('id', userId);
+
+            if (error) throw error;
+
+            setUsers(users.map(user => 
+                user.id === userId ? { 
+                    ...user, 
+                    subscription_plan: null,
+                    subscription_plans: null
+                } : user
+            ));
+        } catch (error) {
+            console.error('Erreur lors de la suppression du plan:', error);
+        }
+    };
+
     // Suspendre un utilisateur
     const suspendUser = async (userId, currentStatus) => {
         try {
-            // Dans une implémentation réelle, vous auriez un champ 'is_suspended' dans la table profiles
-            // Pour l'instant, nous allons utiliser le badge 'none' comme suspension
             const newBadge = currentStatus === 'none' ? 'pending' : 'none';
             
             const { error } = await supabase
@@ -213,6 +281,12 @@ export default function UsersManagement() {
     const viewUserDetails = (user) => {
         setSelectedUser(user);
         setIsModalOpen(true);
+    };
+
+    // Ouvrir le modal d'assignation de plan
+    const openSubscriptionModal = (user) => {
+        setSelectedUser(user);
+        setIsSubscriptionModalOpen(true);
     };
 
     // Obtenir l'icône du rôle
@@ -314,11 +388,14 @@ export default function UsersManagement() {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Contact
                                 </th>
-                                <th className="px-6-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Rôle
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Badge
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Plan d'abonnement
                                 </th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     Statistiques
@@ -336,6 +413,7 @@ export default function UsersManagement() {
                                 const RoleIcon = getRoleIcon(user.role);
                                 const roleInfo = getRoleInfo(user.role);
                                 const badgeInfo = getBadgeInfo(user.badge);
+                                const hasSubscription = user.subscription_plan && user.subscription_plans;
                                 
                                 return (
                                     <tr key={user.id} className="hover:bg-gray-50 transition-colors">
@@ -391,6 +469,41 @@ export default function UsersManagement() {
                                                 </select>
                                             </div>
                                         </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex items-center gap-2">
+                                                {hasSubscription ? (
+                                                    <>
+                                                        <FaCrown className="text-yellow-500" />
+                                                        <span className="text-sm font-medium text-gray-700">
+                                                            {user.subscription_plans.name}
+                                                        </span>
+                                                        <span className="text-xs text-gray-500">
+                                                            ({formatPrice(user.subscription_plans.price)})
+                                                        </span>
+                                                        <button
+                                                            onClick={() => removeSubscriptionPlan(user.id)}
+                                                            className="text-red-600 hover:text-red-800 transition-colors ml-2"
+                                                            title="Retirer le plan"
+                                                        >
+                                                            <FaTimesCircle className="text-sm" />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <span className="text-sm text-gray-500">Aucun plan</span>
+                                                        {(user.role === 'seller' || user.role === 'deliverer') && (
+                                                            <button
+                                                                onClick={() => openSubscriptionModal(user)}
+                                                                className="text-[var(--company-blue)] hover:text-[var(--app-dark-blue)] transition-colors ml-2"
+                                                                title="Assigner un plan"
+                                                            >
+                                                                <FaCreditCard className="text-sm" />
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4">
                                             <div className="text-xs text-gray-600 space-y-1">
                                                 {user.role === 'seller' && (
@@ -423,6 +536,17 @@ export default function UsersManagement() {
                                                 >
                                                     <FaEye className="text-lg" />
                                                 </button>
+                                                
+                                                {(user.role === 'seller' || user.role === 'deliverer') && (
+                                                    <button
+                                                        onClick={() => openSubscriptionModal(user)}
+                                                        className="text-yellow-600 hover:text-yellow-800 transition-colors"
+                                                        title="Gérer l'abonnement"
+                                                    >
+                                                        <FaCreditCard className="text-lg" />
+                                                    </button>
+                                                )}
+                                                
                                                 <button
                                                     onClick={() => suspendUser(user.id, user.badge)}
                                                     className={`${
@@ -438,7 +562,7 @@ export default function UsersManagement() {
                                                     onClick={() => deleteUser(user.id)}
                                                     className="text-red-600 hover:text-red-800 transition-colors"
                                                     title="Supprimer l'utilisateur"
-                                                    disabled={user.role === 'admin'} // Empêcher la suppression des admins
+                                                    disabled={user.role === 'admin'}
                                                 >
                                                     <FaTrash className={`text-lg ${user.role === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`} />
                                                 </button>
@@ -525,6 +649,53 @@ export default function UsersManagement() {
                                 </div>
                             </div>
 
+                            {/* Plan d'abonnement */}
+                            <div>
+                                <h3 className="font-semibold text-gray-700 mb-3">Plan d'abonnement</h3>
+                                {selectedUser.subscription_plans ? (
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <FaCrown className="text-yellow-500" />
+                                                    <span className="font-semibold text-yellow-800">
+                                                        {selectedUser.subscription_plans.name}
+                                                    </span>
+                                                </div>
+                                                <div className="text-sm text-yellow-700 mt-1">
+                                                    <p>Prix: {formatPrice(selectedUser.subscription_plans.price)}</p>
+                                                    <p>Produits max: {selectedUser.subscription_plans.max_products}</p>
+                                                    <p>Annonces max: {selectedUser.subscription_plans.max_ads}</p>
+                                                    <p>Solde wallet max: {formatPrice(selectedUser.subscription_plans.max_wallet_balance)}</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => removeSubscriptionPlan(selectedUser.id)}
+                                                className="text-red-600 hover:text-red-800 transition-colors"
+                                                title="Retirer le plan"
+                                            >
+                                                <FaTimesCircle className="text-xl" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-gray-600">Aucun plan d'abonnement assigné</p>
+                                        {(selectedUser.role === 'seller' || selectedUser.role === 'deliverer') && (
+                                            <button
+                                                onClick={() => {
+                                                    setIsModalOpen(false);
+                                                    openSubscriptionModal(selectedUser);
+                                                }}
+                                                className="mt-2 px-4 py-2 bg-[var(--company-blue)] text-white rounded-lg hover:bg-[var(--app-dark-blue)] transition-colors"
+                                            >
+                                                Assigner un plan
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Statistiques détaillées */}
                             <div>
                                 <h3 className="font-semibold text-gray-700 mb-3">Statistiques</h3>
@@ -564,7 +735,6 @@ export default function UsersManagement() {
                                 <div className="space-y-2 text-sm">
                                     <p><strong>Date d'inscription:</strong> {new Date(selectedUser.created_at).toLocaleDateString('fr-FR')}</p>
                                     <p><strong>Dernière connexion:</strong> {new Date().toLocaleDateString('fr-FR')}</p>
-                                    <p><strong>Plan d'abonnement:</strong> {selectedUser.subscription_plan ? 'Premium' : 'Gratuit'}</p>
                                 </div>
                             </div>
                         </div>
@@ -576,6 +746,112 @@ export default function UsersManagement() {
                                     className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                                 >
                                     Fermer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal d'assignation de plan d'abonnement */}
+            {isSubscriptionModalOpen && selectedUser && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full">
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-xl font-bold text-gray-800">
+                                    Assigner un plan d'abonnement
+                                </h2>
+                                <button
+                                    onClick={() => setIsSubscriptionModalOpen(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    disabled={assigningPlan}
+                                >
+                                    <FaTimesCircle className="text-2xl" />
+                                </button>
+                            </div>
+                            <p className="text-gray-600 mt-1">
+                                Pour {selectedUser.name} ({getRoleInfo(selectedUser.role).label})
+                            </p>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                {subscriptionPlans.map((plan) => (
+                                    <div
+                                        key={plan.id}
+                                        className="border border-gray-200 rounded-lg p-4 hover:border-[var(--company-blue)] transition-colors cursor-pointer"
+                                        onClick={() => !assigningPlan && assignSubscriptionPlan(selectedUser.id, plan.id)}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-semibold text-gray-800">{plan.name}</h3>
+                                                <p className="text-sm text-gray-600 mt-1">
+                                                    {formatPrice(plan.price)} / mois
+                                                </p>
+                                                <div className="text-xs text-gray-500 mt-2 space-y-1">
+                                                    <p>• {plan.max_products} produits maximum</p>
+                                                    <p>• {plan.max_ads} annonces maximum</p>
+                                                    <p>• Solde wallet: {formatPrice(plan.max_wallet_balance)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {selectedUser.subscription_plan === plan.id && (
+                                                    <FaCheckCircle className="text-green-500" />
+                                                )}
+                                                <button
+                                                    onClick={() => assignSubscriptionPlan(selectedUser.id, plan.id)}
+                                                    disabled={assigningPlan || selectedUser.subscription_plan === plan.id}
+                                                    className={`px-4 py-2 rounded-lg transition-colors ${
+                                                        selectedUser.subscription_plan === plan.id
+                                                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-[var(--company-blue)] text-white hover:bg-[var(--app-dark-blue)]'
+                                                    }`}
+                                                >
+                                                    {assigningPlan ? (
+                                                        <FaSpinner className="animate-spin" />
+                                                    ) : selectedUser.subscription_plan === plan.id ? (
+                                                        'Assigné'
+                                                    ) : (
+                                                        'Assigner'
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {/* Option pour retirer le plan */}
+                                {selectedUser.subscription_plan && (
+                                    <div className="border border-red-200 rounded-lg p-4 mt-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-semibold text-red-800">Retirer le plan actuel</h3>
+                                                <p className="text-sm text-red-600 mt-1">
+                                                    Cet utilisateur reviendra au plan gratuit
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => removeSubscriptionPlan(selectedUser.id)}
+                                                disabled={assigningPlan}
+                                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                            >
+                                                {assigningPlan ? <FaSpinner className="animate-spin" /> : 'Retirer'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={() => setIsSubscriptionModalOpen(false)}
+                                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                                    disabled={assigningPlan}
+                                >
+                                    Annuler
                                 </button>
                             </div>
                         </div>

@@ -17,7 +17,10 @@ import {
     FaSpinner,
     FaExclamationTriangle,
     FaShoppingBag,
-    FaMoneyBillWave
+    FaMoneyBillWave,
+    FaCrown,
+    FaExclamationCircle,
+    FaStar
 } from 'react-icons/fa';
 import { FaCircleXmark } from 'react-icons/fa6';
 
@@ -30,10 +33,38 @@ export default function DelivererDeliveriesPage() {
     const [updatingOrder, setUpdatingOrder] = useState(null);
     const [showDeliveryNotes, setShowDeliveryNotes] = useState(null);
     const [deliveryNotes, setDeliveryNotes] = useState('');
+    const [subscriptionPlan, setSubscriptionPlan] = useState(null);
+    const [currentDeliveriesCount, setCurrentDeliveriesCount] = useState(0);
 
     useEffect(() => {
+        fetchDelivererSubscription();
         fetchActiveDeliveries();
     }, [user]);
+
+    // Charger le plan d'abonnement du livreur
+    const fetchDelivererSubscription = async () => {
+        if (!user) return;
+
+        try {
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select(`
+                    subscription_plan,
+                    subscription_plans (*)
+                `)
+                .eq('id', user.id)
+                .single();
+
+            if (profileError) throw profileError;
+
+            if (profileData.subscription_plan) {
+                setSubscriptionPlan(profileData.subscription_plans);
+            }
+
+        } catch (error) {
+            console.error('Erreur lors du chargement du plan:', error);
+        }
+    };
 
     const fetchActiveDeliveries = async () => {
         if (!user) return;
@@ -62,12 +93,27 @@ export default function DelivererDeliveriesPage() {
             if (error) throw error;
 
             setActiveDeliveries(data || []);
+            setCurrentDeliveriesCount(data?.length || 0);
+
         } catch (err) {
             console.error("Erreur de chargement des livraisons:", err);
             setError("Impossible de charger vos livraisons en cours.");
         } finally {
             setLoading(false);
         }
+    };
+
+    // Vérifier si le livreur peut accepter plus de livraisons
+    const canAcceptMoreDeliveries = () => {
+        if (!subscriptionPlan) return true; // Plan gratuit par défaut
+        
+        // Vérifier la limite de livraisons simultanées
+        // Utilisation de max_ads comme limite de livraisons simultanées
+        if (currentDeliveriesCount >= subscriptionPlan.max_ads) {
+            return false;
+        }
+        
+        return true;
     };
 
     const updateOrderStatus = async (orderId, newStatus, notes = '') => {
@@ -117,6 +163,12 @@ export default function DelivererDeliveriesPage() {
 
     const startDelivery = async (orderId) => {
         if (!user) return;
+
+        // Vérifier la limite de livraisons simultanées
+        if (!canAcceptMoreDeliveries()) {
+            alert(`Vous avez atteint la limite de ${subscriptionPlan.max_ads} livraisons simultanées de votre plan. Veuillez terminer certaines livraisons avant d'en commencer de nouvelles.`);
+            return;
+        }
 
         setUpdatingOrder(orderId);
         try {
@@ -197,7 +249,42 @@ export default function DelivererDeliveriesPage() {
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold text-gray-800">Mes Livraisons en Cours</h1>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800">Mes Livraisons en Cours</h1>
+                    
+                    {/* Informations du plan */}
+                    <div className="mt-2 flex items-center gap-4">
+                        <div className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            subscriptionPlan 
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-gray-100 text-gray-800 border border-gray-200'
+                        }`}>
+                            {subscriptionPlan ? (
+                                <div className="flex items-center gap-2">
+                                    <FaCrown className="text-yellow-500" />
+                                    <span>Plan {subscriptionPlan.name}</span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <FaTruck className="text-gray-500" />
+                                    <span>Plan Gratuit</span>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="text-sm text-gray-600">
+                            Livraisons en cours: {currentDeliveriesCount} / {subscriptionPlan?.max_ads || '∞'}
+                        </div>
+
+                        {!canAcceptMoreDeliveries() && (
+                            <div className="flex items-center gap-1 text-red-600 text-sm">
+                                <FaExclamationCircle />
+                                <span>Limite de livraisons atteinte</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                
                 <div className="flex items-center gap-2 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg">
                     <FaTruck className="text-xl" />
                     <span className="font-semibold">{activeDeliveries.length} livraison(s) active(s)</span>
@@ -303,10 +390,7 @@ export default function DelivererDeliveriesPage() {
                                             <div className="space-y-1 text-sm">
                                                 <div><span className="font-medium">Méthode:</span> {delivery.payment_method}</div>
                                                 <div><span className="font-medium">Statut:</span> 
-                                                    <span className={`ml-1 capitalize ${
-                                                        delivery.payment_status === 'completed' ? 'text-green-600' : 
-                                                        delivery.payment_status === 'failed' ? 'text-red-600' : 'text-orange-600'
-                                                    }`}>
+                                                    <span className={`ml-1 capitalize ${delivery.payment_status === 'completed' ? 'text-green-600' : delivery.payment_status === 'failed' ? 'text-red-600' : 'text-orange-600'}`}>
                                                         {delivery.payment_status}
                                                     </span>
                                                 </div>
@@ -357,8 +441,17 @@ export default function DelivererDeliveriesPage() {
                                         {delivery.status === 'confirmed' && (
                                             <button
                                                 onClick={() => startDelivery(delivery.id)}
-                                                disabled={updatingOrder === delivery.id}
-                                                className="bg-[var(--app-orange)] hover:bg-orange-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
+                                                disabled={updatingOrder === delivery.id || !canAcceptMoreDeliveries()}
+                                                className={`${
+                                                    canAcceptMoreDeliveries()
+                                                        ? 'bg-[var(--app-orange)] hover:bg-orange-700'
+                                                        : 'bg-gray-400 cursor-not-allowed'
+                                                } text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 disabled:opacity-50`}
+                                                title={
+                                                    canAcceptMoreDeliveries()
+                                                        ? "Commencer la livraison"
+                                                        : "Limite de livraisons atteinte"
+                                                }
                                             >
                                                 {updatingOrder === delivery.id ? (
                                                     <FaSpinner className="animate-spin" />
@@ -459,6 +552,11 @@ export default function DelivererDeliveriesPage() {
                     <li>• Contactez le client si vous avez du mal à trouver l'adresse</li>
                     <li>• En cas de problème, contactez le support au +XXX XXX XXX</li>
                     <li>• Les notes de livraison aident à résoudre les litiges éventuels</li>
+                    {subscriptionPlan && (
+                        <li className="font-semibold">
+                            • Limite de votre plan: {subscriptionPlan.max_ads} livraisons simultanées
+                        </li>
+                    )}
                 </ul>
             </div>
         </div>
