@@ -19,6 +19,9 @@ import {
     FaExclamationTriangle
 } from 'react-icons/fa';
 
+// Pour l'icône de mot de passe
+import { FaKey } from 'react-icons/fa';
+
 export default function PlatformSettings() {
     const [settings, setSettings] = useState({
         platform_enabled: true,
@@ -32,6 +35,15 @@ export default function PlatformSettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState({ type: '', text: '' });
+
+    // États pour la modification du mot de passe
+    const [passwords, setPasswords] = useState({
+        current: '',
+        new: '',
+        confirm: ''
+    });
+    const [passwordLoading, setPasswordLoading] = useState(false);
+    const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
 
     // Charger les paramètres et les devises
     const fetchData = async () => {
@@ -126,6 +138,54 @@ export default function PlatformSettings() {
         }));
     };
 
+    // Gérer le changement des champs de mot de passe
+    const handlePasswordChange = (key, value) => {
+        setPasswords(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
+
+    // Fonction pour modifier le mot de passe
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        setPasswordMessage({ type: '', text: '' });
+        if (!passwords.current || !passwords.new || !passwords.confirm) {
+            setPasswordMessage({ type: 'error', text: 'Veuillez remplir tous les champs.' });
+            return;
+        }
+        if (passwords.new !== passwords.confirm) {
+            setPasswordMessage({ type: 'error', text: 'Les nouveaux mots de passe ne correspondent pas.' });
+            return;
+        }
+        setPasswordLoading(true);
+        try {
+            // Récupérer l'utilisateur courant
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            if (userError || !user) throw userError || new Error('Utilisateur non trouvé');
+
+            // Tenter de re-authentifier l'utilisateur avec l'ancien mot de passe
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: user.email,
+                password: passwords.current
+            });
+            if (signInError) throw new Error('Mot de passe actuel incorrect.');
+
+            // Mettre à jour le mot de passe
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: passwords.new
+            });
+            if (updateError) throw updateError;
+
+            setPasswordMessage({ type: 'success', text: 'Mot de passe modifié avec succès !' });
+            setPasswords({ current: '', new: '', confirm: '' });
+        } catch (error) {
+            setPasswordMessage({ type: 'error', text: error.message || 'Erreur lors du changement de mot de passe.' });
+        } finally {
+            setPasswordLoading(false);
+        }
+    };
+
     // Toggle pour les paramètres boolean
     const ToggleSwitch = ({ enabled, onChange, label, description }) => (
         <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
@@ -173,6 +233,72 @@ export default function PlatformSettings() {
                 <p className="text-gray-600">
                     Configurez les paramètres généraux de votre plateforme ASSOUK
                 </p>
+            </div>
+
+            {/* Section Modification du mot de passe */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="border-b border-gray-200 px-6 py-4">
+                    <div className="flex items-center gap-3">
+                        <FaKey className="text-xl text-[var(--company-blue)]" />
+                        <h2 className="text-lg font-semibold text-gray-800">Modifier le mot de passe administrateur</h2>
+                    </div>
+                </div>
+                <form className="p-6 space-y-4 max-w-md" onSubmit={handleChangePassword}>
+                    {passwordMessage.text && (
+                        <div className={`rounded-lg p-3 mb-2 ${
+                            passwordMessage.type === 'success'
+                                ? 'bg-green-50 border border-green-200 text-green-800'
+                                : 'bg-red-50 border border-red-200 text-red-800'
+                        }`}>
+                            <div className="flex items-center gap-2">
+                                {passwordMessage.type === 'success' ? (
+                                    <FaCheckCircle className="text-green-500" />
+                                ) : (
+                                    <FaExclamationTriangle className="text-red-500" />
+                                )}
+                                <span className="font-medium">{passwordMessage.text}</span>
+                            </div>
+                        </div>
+                    )}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe actuel</label>
+                        <input
+                            type="password"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)] focus:border-transparent"
+                            value={passwords.current}
+                            onChange={e => handlePasswordChange('current', e.target.value)}
+                            autoComplete="current-password"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nouveau mot de passe</label>
+                        <input
+                            type="password"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)] focus:border-transparent"
+                            value={passwords.new}
+                            onChange={e => handlePasswordChange('new', e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le nouveau mot de passe</label>
+                        <input
+                            type="password"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--company-blue)] focus:border-transparent"
+                            value={passwords.confirm}
+                            onChange={e => handlePasswordChange('confirm', e.target.value)}
+                            autoComplete="new-password"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={passwordLoading}
+                        className="flex items-center gap-2 px-6 py-2 bg-[var(--company-blue)] text-white rounded-lg hover:bg-[var(--app-dark-blue)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                    >
+                        {passwordLoading ? <FaSpinner className="animate-spin" /> : <FaSave />}
+                        {passwordLoading ? 'Modification...' : 'Modifier le mot de passe'}
+                    </button>
+                </form>
             </div>
 
             {/* Message de statut */}
